@@ -20,7 +20,7 @@ This is not recommended except in special cases like:
 * You're bringing an old branch to life and want to minimize conflict cause by the large coding style update
 
 Note: Uncrustify is in heavy development and tends to introduce breaking changes from time to time.
-OpenSCAD has been tested against uncrustify commit a05edf605a5b1ea69ac36918de563d4acf7f31fb (Dec 24 2017).
+OpenSCAD has been tested against uncrustify commit d32ed2c65c0f826fb0fbde00416eaf3e15eea28e (Feb 14 2018).
 
 # Regression Tests
 
