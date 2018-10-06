@@ -4,16 +4,16 @@
 
 class ParameterComboBox : public ParameterVirtualWidget
 {
-	Q_OBJECT
+  Q_OBJECT
 
 public:
-	ParameterComboBox(QWidget *parent, ParameterObject *parameterobject, DescLoD descriptionLoD);
-	void setValue() override;
-	void setParameterFocus() override;
+  ParameterComboBox(QWidget *parent, ParameterObject *parameterobject, DescLoD descriptionLoD);
+  void setValue() override;
+  void setParameterFocus() override;
 
 protected slots:
-	void onChanged(int idx);
+  void onChanged(int idx);
 
 private:
-	bool volatile suppressUpdate; 
+  bool volatile suppressUpdate;
 };

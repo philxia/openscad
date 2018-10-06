@@ -2,18 +2,18 @@
 
 #include "parametervirtualwidget.h"
 
-class ParameterSpinBox :public ParameterVirtualWidget
+class ParameterSpinBox : public ParameterVirtualWidget
 {
-	Q_OBJECT
+  Q_OBJECT
 public:
-	ParameterSpinBox(QWidget *parent, ParameterObject *parameterobject, DescLoD descriptionLoD);
-	void setValue() override;
-	void setParameterFocus() override;
+  ParameterSpinBox(QWidget *parent, ParameterObject *parameterobject, DescLoD descriptionLoD);
+  void setValue() override;
+  void setParameterFocus() override;
 
 protected slots:
-	void onChanged(double);
-	void onEditingFinished();
+  void onChanged(double);
+  void onEditingFinished();
 
 private:
-	bool volatile suppressUpdate; 
+  bool volatile suppressUpdate;
 };
