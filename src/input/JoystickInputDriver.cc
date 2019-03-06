@@ -35,22 +35,29 @@
 
 void JoystickInputDriver::run()
 {
-    struct js_event js;
+	struct js_event js;
 
-    while (read(fd, &js, sizeof(struct js_event)) > 0 && !stopRequest) {
-        switch (js.type & ~JS_EVENT_INIT) {
-        case JS_EVENT_BUTTON:
-            InputDriverManager::instance()->sendEvent(new InputEventButtonChanged(js.number, js.value != 0));
-            break;
-        case JS_EVENT_AXIS:
-            InputDriverManager::instance()->sendEvent(new InputEventAxisChanged(js.number, js.value / 32767.0));
-            break;
-        }
-    }
-    ::close(fd);
+	while (!stopRequest) {
+		ssize_t len = read(fd, &js, sizeof(struct js_event));
+		if (len < 0) {
+			break;
+		}
+		if (len != sizeof(struct js_event)) {
+			continue;
+		}
+		switch (js.type & ~JS_EVENT_INIT) {
+		case JS_EVENT_BUTTON:
+			InputDriverManager::instance()->sendEvent(new InputEventButtonChanged(js.number, js.value != 0));
+			break;
+		case JS_EVENT_AXIS:
+			InputDriverManager::instance()->sendEvent(new InputEventAxisChanged(js.number, js.value / 32767.0));
+			break;
+		}
+	}
+	::close(fd);
 }
 
-JoystickInputDriver::JoystickInputDriver() : fd(-1)
+JoystickInputDriver::JoystickInputDriver() : fd(-1), version(0), axes(0), buttons(0), stopRequest(false)
 {
 
 }
@@ -94,6 +101,16 @@ const std::string & JoystickInputDriver::get_name() const
 {
     static std::string name = "JoystickInputDriver";
     return name;
+}
+
+std::string JoystickInputDriver::get_info() const
+{
+	return STR(
+		get_name() << " " << (isOpen() ? "open" : "not open") << " " <<
+		"Name: " << name << " " <<
+		"Axis: " << (int) axes << " " <<
+		"Buttons: " << (int) buttons << " "
+	);
 }
 
 void JoystickInputDriver::setJoystickNr(std::string jnr)

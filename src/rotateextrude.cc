@@ -53,9 +53,10 @@ AbstractNode *RotateExtrudeModule::instantiate(const Context *ctx, const ModuleI
 	auto node = new RotateExtrudeNode(inst);
 
 	AssignmentList args{Assignment("file"), Assignment("layer"), Assignment("origin"), Assignment("scale")};
+	AssignmentList optargs{Assignment("convexity"), Assignment("angle")};
 
 	Context c(ctx);
-	c.setVariables(args, evalctx);
+	c.setVariables(evalctx, args, optargs);
 	inst->scope.apply(*evalctx);
 
 	node->fn = c.lookup_variable("$fn")->toDouble();
@@ -79,7 +80,11 @@ AbstractNode *RotateExtrudeModule::instantiate(const Context *ctx, const ModuleI
 
 	node->layername = layer->isUndefined() ? "" : layer->toString();
 	node->convexity = static_cast<int>(convexity->toDouble());
-	origin->getVec2(node->origin_x, node->origin_y);
+	bool originOk = origin->getVec2(node->origin_x, node->origin_y);
+	originOk &= std::isfinite(node->origin_x) && std::isfinite(node->origin_y);
+	if(origin!=ValuePtr::undefined && !originOk){
+		PRINTB("WARNING: rotate_extrude(..., origin=%s) could not be converted, %s", origin->toEchoString() % evalctx->loc.toRelativeString(ctx->documentPath()));
+	}
 	node->scale = scale->toDouble();
 	node->angle = 360;
 	angle->getFiniteDouble(node->angle);
@@ -103,7 +108,7 @@ AbstractNode *RotateExtrudeModule::instantiate(const Context *ctx, const ModuleI
 
 std::string RotateExtrudeNode::toString() const
 {
-	std::stringstream stream;
+	std::ostringstream stream;
 
 	stream << this->name() << "(";
 	if (!this->filename.empty()) { // Ignore deprecated parameters if empty 

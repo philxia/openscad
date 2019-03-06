@@ -2,7 +2,7 @@
 
 This is our custom tessellator of Nef Polyhedron faces. The problem with 
 Nef faces is that sometimes the 'default' tessellator of Nef Polyhedron 
-doesnt work. This is particularly true with situations where the polygon 
+doesn't work. This is particularly true with situations where the polygon
 face is not, actually, 'simple', according to CGAL itself. This can 
 occur on a bad quality STL import but also for other reasons. The 
 resulting Nef face will appear to the average human eye as an ordinary, 
@@ -51,8 +51,11 @@ much slower in many cases.
 */
 
 #include "cgalutils.h"
+#pragma push_macro("NDEBUG")
+#undef NDEBUG
 #include <CGAL/Delaunay_mesher_no_edge_refinement_2.h>
 #include <CGAL/Delaunay_mesh_face_base_2.h>
+#pragma pop_macro("NDEBUG")
 
 typedef CGAL_Kernel3 Kernel;
 //typedef CGAL::Triangulation_vertex_base_2<Kernel> Vb;

@@ -11,7 +11,7 @@ ParameterText::ParameterText(QWidget *parent, ParameterObject *parameterobject, 
 	if(object->values->toVector().size() == 1){ // [max] format from makerbot customizer
 		max = std::stoi(object->values->toVector()[0]->toString(),nullptr,0);
 	}
-	lineEdit->setMaxLength(max);
+	this->lineEdit->setMaxLength(max);
 
 	connect(lineEdit, SIGNAL(textChanged(QString)), this, SLOT(onChanged(QString)));
 	connect(lineEdit, SIGNAL(editingFinished()), this, SLOT(onEditingFinished()));
@@ -31,20 +31,12 @@ void ParameterText::onChanged(QString)
 				object->value = newValue;
 			}
 		}
-		object->focus = true;
-		
 	}
 }
 
 void ParameterText::onEditingFinished()
 {
 	emit changed();
-}
-
-void ParameterText::setParameterFocus()
-{
-	this->lineEdit->setFocus();
-	object->focus = false;
 }
 
 void ParameterText::setValue()

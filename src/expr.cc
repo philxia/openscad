@@ -23,6 +23,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
+#include "compiler_specific.h"
 #include "expression.h"
 #include "value.h"
 #include "evalcontext.h"
@@ -34,6 +35,7 @@
 #include "stackcheck.h"
 #include "exceptions.h"
 #include "feature.h"
+#include "printutils.h"
 #include <boost/bind.hpp>
 
 #include <boost/assign/std/vector.hpp>
@@ -65,8 +67,8 @@ namespace {
 		return ret;
 	}
 
-	void evaluate_sequential_assignment(const AssignmentList &assignment_list, Context *context) {
-		EvalContext ctx(context, assignment_list);
+	void evaluate_sequential_assignment(const AssignmentList &assignment_list, Context *context, const Location &loc) {
+		EvalContext ctx(context, assignment_list, loc);
 		ctx.assignTo(*context);
 	}
 }
@@ -384,7 +386,12 @@ Lookup::Lookup(const std::string &name, const Location &loc) : Expression(loc), 
 
 ValuePtr Lookup::evaluate(const Context *context) const
 {
-	return context->lookup_variable(this->name);
+	return context->lookup_variable(this->name,false,loc);
+}
+
+ValuePtr Lookup::evaluateSilently(const Context *context) const
+{
+	return context->lookup_variable(this->name,true);
 }
 
 void Lookup::print(std::ostream &stream, const std::string &) const
@@ -424,16 +431,46 @@ FunctionCall::FunctionCall(const std::string &name,
 {
 }
 
+/**
+ * This is separated because PRINTB uses quite a lot of stack space
+ * and the method using it evaluate()
+ * is called often when recursive functions are evaluated.
+ * noinline is required, as we here specifically optimize for stack usage
+ * during normal operating, not runtime during error handling.
+*/
+static void NOINLINE print_err(const char *name, const Location &loc,const Context *ctx){
+	std::string locs = loc.toRelativeString(ctx->documentPath());
+	PRINTB("ERROR: Recursion detected calling function '%s' %s", name % locs);
+}
+
+/**
+ * This is separated because PRINTB uses quite a lot of stack space
+ * and the method using it evaluate()
+ * is called often when recursive functions are evaluated.
+ * noinline is required, as we here specifically optimize for stack usage
+ * during normal operating, not runtime during error handling.
+*/
+static void NOINLINE print_trace(const FunctionCall *val, const Context *ctx){
+	PRINTB("TRACE: called by '%s', %s.", val->name % val->location().toRelativeString(ctx->documentPath()));
+}
+
 ValuePtr FunctionCall::evaluate(const Context *context) const
 {
-	if (StackCheck::inst()->check()) {
-		throw RecursionException::create("function", this->name);
+	if (StackCheck::inst().check()) {
+		print_err(this->name.c_str(),loc,context);
+		throw RecursionException::create("function", this->name,this->loc);
 	}
-    
-	EvalContext c(context, this->arguments);
-	ValuePtr result = context->evaluate_function(this->name, &c);
-
-	return result;
+	try{
+		EvalContext c(context, this->arguments, this->loc);
+		ValuePtr result = context->evaluate_function(this->name, &c);
+		return result;
+	}catch(EvaluationException &e){
+		if(e.traceDepth>0){
+			print_trace(this, context);
+			e.traceDepth--;
+		}
+		throw;
+	}
 }
 
 void FunctionCall::print(std::ostream &stream, const std::string &) const
@@ -463,10 +500,10 @@ Assert::Assert(const AssignmentList &args, Expression *expr, const Location &loc
 
 ValuePtr Assert::evaluate(const Context *context) const
 {
-	EvalContext assert_context(context, this->arguments);
+	EvalContext assert_context(context, this->arguments, this->loc);
 
 	Context c(&assert_context);
-	evaluate_assert(c, &assert_context, loc);
+	evaluate_assert(c, &assert_context);
 
 	ValuePtr result = expr ? expr->evaluate(&c) : ValuePtr::undefined;
 	return result;
@@ -486,10 +523,8 @@ Echo::Echo(const AssignmentList &args, Expression *expr, const Location &loc)
 
 ValuePtr Echo::evaluate(const Context *context) const
 {
-	std::stringstream msg;
-	EvalContext echo_context(context, this->arguments);
-	msg << "ECHO: " << echo_context;
-	PRINTB("%s", msg.str());
+	EvalContext echo_context(context, this->arguments, this->loc);	
+	PRINTB("%s", STR("ECHO: " << echo_context));
 
 	ValuePtr result = expr ? expr->evaluate(context) : ValuePtr::undefined;
 	return result;
@@ -509,7 +544,7 @@ Let::Let(const AssignmentList &args, Expression *expr, const Location &loc)
 ValuePtr Let::evaluate(const Context *context) const
 {
 	Context c(context);
-	evaluate_sequential_assignment(this->arguments, &c);
+	evaluate_sequential_assignment(this->arguments, &c, this->loc);
 
 	return this->expr->evaluate(&c);
 }
@@ -530,10 +565,6 @@ LcIf::LcIf(Expression *cond, Expression *ifexpr, Expression *elseexpr, const Loc
 
 ValuePtr LcIf::evaluate(const Context *context) const
 {
-    if (this->elseexpr) {
-    	ExperimentalFeatureException::check(Feature::ExperimentalElseExpression);
-    }
-
     const shared_ptr<Expression> &expr = this->cond->evaluate(context) ? this->ifexpr : this->elseexpr;
 	
     Value::VectorType vec;
@@ -562,8 +593,6 @@ LcEach::LcEach(Expression *expr, const Location &loc) : ListComprehension(loc), 
 
 ValuePtr LcEach::evaluate(const Context *context) const
 {
-	ExperimentalFeatureException::check(Feature::ExperimentalEachExpression);
-
 	Value::VectorType vec;
 
     ValuePtr v = this->expr->evaluate(context);
@@ -572,7 +601,7 @@ ValuePtr LcEach::evaluate(const Context *context) const
         RangeType range = v->toRange();
         uint32_t steps = range.numValues();
         if (steps >= 1000000) {
-            PRINTB("WARNING: Bad range parameter in for statement: too many elements (%lu).", steps);
+            PRINTB("WARNING: Bad range parameter in for statement: too many elements (%lu), %s", steps % loc.toRelativeString(context->documentPath()));
         } else {
             for (RangeType::iterator it = range.begin();it != range.end();it++) {
                 vec.push_back(ValuePtr(*it));
@@ -612,7 +641,7 @@ ValuePtr LcFor::evaluate(const Context *context) const
 {
 	Value::VectorType vec;
 
-    EvalContext for_context(context, this->arguments);
+    EvalContext for_context(context, this->arguments, this->loc);
 
     Context assign_context(context);
 
@@ -626,7 +655,7 @@ ValuePtr LcFor::evaluate(const Context *context) const
         RangeType range = it_values->toRange();
         uint32_t steps = range.numValues();
         if (steps >= 1000000) {
-            PRINTB("WARNING: Bad range parameter in for statement: too many elements (%lu).", steps);
+            PRINTB("WARNING: Bad range parameter in for statement: too many elements (%lu), %s", steps % loc.toRelativeString(context->documentPath()));
         } else {
             for (RangeType::iterator it = range.begin();it != range.end();it++) {
                 c.set_variable(it_name, ValuePtr(*it));
@@ -667,21 +696,23 @@ LcForC::LcForC(const AssignmentList &args, const AssignmentList &incrargs, Expre
 
 ValuePtr LcForC::evaluate(const Context *context) const
 {
-	ExperimentalFeatureException::check(Feature::ExperimentalForCExpression);
-
 	Value::VectorType vec;
 
     Context c(context);
-    evaluate_sequential_assignment(this->arguments, &c);
+    evaluate_sequential_assignment(this->arguments, &c, this->loc);
 
 	unsigned int counter = 0;
     while (this->cond->evaluate(&c)) {
         vec.push_back(this->expr->evaluate(&c));
 
-		if (counter++ == 1000000) throw RecursionException::create("for loop", "");
+        if (counter++ == 1000000) {
+            std::string locs = loc.toRelativeString(context->documentPath());
+            PRINTB("ERROR: for loop counter exceeded limit, %s", locs);
+            throw LoopCntException::create("for", loc);
+        }
 
         Context tmp(&c);
-        evaluate_sequential_assignment(this->incr_arguments, &tmp);
+        evaluate_sequential_assignment(this->incr_arguments, &tmp, this->loc);
         c.apply_variables(tmp);
     }    
 
@@ -709,7 +740,7 @@ LcLet::LcLet(const AssignmentList &args, Expression *expr, const Location &loc)
 ValuePtr LcLet::evaluate(const Context *context) const
 {
     Context c(context);
-    evaluate_sequential_assignment(this->arguments, &c);
+    evaluate_sequential_assignment(this->arguments, &c, this->loc);
     return this->expr->evaluate(&c);
 }
 
@@ -718,14 +749,14 @@ void LcLet::print(std::ostream &stream, const std::string &) const
     stream << "let(" << this->arguments << ") (" << *this->expr << ")";
 }
 
-void evaluate_assert(const Context &context, const class EvalContext *evalctx, const Location &loc)
+void evaluate_assert(const Context &context, const class EvalContext *evalctx)
 {
 	AssignmentList args;
 	args += Assignment("condition"), Assignment("message");
 
 	Context c(&context);
 
-	AssignmentMap assignments = evalctx->resolveArguments(args);
+	AssignmentMap assignments = evalctx->resolveArguments(args, {}, false);
 	for (const auto &arg : args) {
 		auto it = assignments.find(arg.name);
 		if (it != assignments.end()) {
@@ -736,14 +767,15 @@ void evaluate_assert(const Context &context, const class EvalContext *evalctx, c
 	const ValuePtr condition = c.lookup_variable("condition");
 
 	if (!condition->toBool()) {
-		std::stringstream msg;
-		msg << "ERROR: Assertion";
 		const Expression *expr = assignments["condition"];
-		if (expr) msg << " '" << *expr << "'";
 		const ValuePtr message = c.lookup_variable("message", true);
+		
+		std::string locs = evalctx->loc.toRelativeString(context.documentPath());
 		if (message->isDefined()) {
-			msg << ": " << message->toEchoString();
+			PRINTB("ERROR: Assertion '%s': %s failed %s", *expr % message->toEchoString() % locs);
+		}else{
+			PRINTB("ERROR: Assertion '%s' failed %s", *expr % locs);
 		}
-		throw AssertionFailedException(msg.str(),loc);
+		throw AssertionFailedException("Assertion Failed",evalctx->loc);
 	}
 }

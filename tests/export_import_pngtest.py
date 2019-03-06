@@ -7,7 +7,7 @@
 #
 #
 # step 1. If the input file is _not_ an .scad file, create a temporary .scad file importing the input file.
-# step 2. Run OpenSCAD on the .scad file, output an export format (csg, stl, off, dxf, svg, amf)
+# step 2. Run OpenSCAD on the .scad file, output an export format (csg, stl, off, dxf, svg, amf, 3mf)
 # step 3. If the export format is _not_ .csg, create a temporary new .scad file importing the exported file
 # step 4. Run OpenSCAD on the .csg or .scad file, export to the given .png file
 # step 5. (done in CTest) - compare the generated .png file to expected output
@@ -53,7 +53,7 @@ def createImport(inputfile, scadfile):
 #
 # Parse arguments
 #
-formats = ['csg', 'stl','off', 'amf', 'dxf', 'svg']
+formats = ['csg', 'stl','off', 'amf', '3mf', 'dxf', 'svg']
 parser = argparse.ArgumentParser()
 parser.add_argument('--openscad', required=True, help='Specify OpenSCAD executable')
 parser.add_argument('--format', required=True, choices=[item for sublist in [(f,f.upper()) for f in formats] for item in sublist], help='Specify 3d export format')
@@ -119,7 +119,7 @@ if args.format != 'csg':
 create_png_cmd = [args.openscad, newscadfile, '-o', pngfile] + remaining_args
 print('Running OpenSCAD #2:', file=sys.stderr)
 print(' '.join(create_png_cmd), file=sys.stderr)
-fontdir =  os.path.join(os.path.dirname(__file__), "..", "testdata/ttf");
+fontdir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "testdata/ttf"))
 fontenv = os.environ.copy();
 fontenv["OPENSCAD_FONT_PATH"] = fontdir;
 result = subprocess.call(create_png_cmd, env = fontenv);

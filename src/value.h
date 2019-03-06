@@ -15,6 +15,9 @@
 #include <cstdint>
 #include "memory.h"
 
+class tostring_visitor;
+class tostream_visitor;
+
 class QuotedString : public std::string
 {
 public:
@@ -94,6 +97,7 @@ public:
   
 	friend class chr_visitor;
 	friend class tostring_visitor;
+	friend class tostream_visitor;
 	friend class bracket_visitor;
 };
 
@@ -191,11 +195,16 @@ public:
   bool getFiniteDouble(double &v) const;
   bool toBool() const;
   std::string toString() const;
+  std::string toString(const tostring_visitor *visitor) const;
   std::string toEchoString() const;
+  std::string toEchoString(const tostring_visitor *visitor) const;
+  void toStream(std::ostringstream &stream) const;
+  void toStream(const tostream_visitor *visitor) const;
   std::string chrString() const;
   const VectorType &toVector() const;
   bool getVec2(double &x, double &y, bool ignoreInfinite = false) const;
-  bool getVec3(double &x, double &y, double &z, double defaultval = 0.0) const;
+  bool getVec3(double &x, double &y, double &z) const;
+  bool getVec3(double &x, double &y, double &z, double defaultval) const;
   RangeType toRange() const;
 
 	operator bool() const { return this->toBool(); }

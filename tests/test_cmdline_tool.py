@@ -86,7 +86,7 @@ def execute_and_redirect(cmd, params, outfile):
     retval = -1
     try:
         proc = subprocess.Popen([cmd] + params, stdout=outfile, stderr=subprocess.STDOUT)
-        out = proc.communicate()[0]
+        out = proc.communicate()[0].decode('utf-8')
         retval = proc.wait()
     except:
         print("Error running subprocess: ", sys.exc_info()[1], file=sys.stderr)
@@ -106,6 +106,8 @@ def normalize_string(s):
     This also normalizes away import paths from 'file = ' arguments."""
 
     s = re.sub(', timestamp = [0-9]+', '', s)
+    
+    """ Don't replace floats after implementing double-conversion library
     def floatrep(match):
         value = float(match.groups()[0])
         if abs(value) < 10**-12:
@@ -114,7 +116,7 @@ def normalize_string(s):
             return "%d"%value
         return "%.6g"%value
     s = re.sub('(-?[0-9]+(\\.[0-9]+)?(e[+-][0-9]+)?)', floatrep, s)
-
+    """
     def pathrep(match):
         return match.groups()[0] + match.groups()[2]
     s = re.sub('(file = ")([^"/]*/)*([^"]*")', pathrep, s)
@@ -155,7 +157,7 @@ def compare_png(resultfilename):
     #args = [expectedfilename, resultfilename, "-alpha", "Off", "-compose", "difference", "-composite", "-threshold", "10%", "-blur", "2", "-threshold", "30%", "-format", "%[fx:w*h*mean]", "info:"]
     args = [expectedfilename, resultfilename, "-alpha", "On", "-compose", "difference", "-composite", "-threshold", "10%", "-morphology", "Erode", "Square", "-format", "%[fx:w*h*mean]", "info:"]
 
-    # for systems with older imagemagick that doesnt support '-morphology'
+    # for systems with older imagemagick that doesn't support '-morphology'
     # http://www.imagemagick.org/Usage/morphology/#alturnative
     if options.comparator == 'old':
       args = [expectedfilename, resultfilename, "-alpha", "Off", "-compose", "difference", "-composite", "-threshold", "10%", "-gaussian-blur","3x65535", "-threshold", "99.99%", "-format", "%[fx:w*h*mean]", "info:"]
@@ -175,8 +177,7 @@ def compare_png(resultfilename):
       args = [expectedfilename, resultfilename]
       compare_method = 'diffpng'
 
-    print('Image comparison cmdline: ', file=sys.stderr)
-    print('["'+str(options.comparison_exec) + '"],' + str(args), file=sys.stderr)
+    print('Image comparison cmdline: ' + options.comparison_exec + ' ' + ' '.join(args), file=sys.stderr)
 
     # these two lines are parsed by the test_pretty_print.py
     print(' actual image: ' + resultfilename + '\n', file=sys.stderr)
@@ -209,6 +210,19 @@ def compare_with_expected(resultfilename):
         else: return compare_default(resultfilename)
     return True
 
+#
+#  Extract the content of a 3MF file (which is a ZIP file having one main XML file
+#  and some additional meta data files) and replace the original file with just
+#  the XML content for easier comparison by the test framework.
+#
+def post_process_3mf(filename):
+    print('post processing 3MF file (extracting XML data from ZIP): ', filename)
+    from zipfile import ZipFile
+    xml_content = ZipFile(filename).read("3D/3dmodel.model")
+    xml_content = re.sub('UUID="[^"]*"', 'UUID="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXX"', xml_content.decode('utf-8'))
+    with open(filename, 'wb') as xml_file:
+        xml_file.write(xml_content.encode('utf-8'))
+
 def run_test(testname, cmd, args):
     cmdname = os.path.split(options.cmd)[1]
 
@@ -233,15 +247,15 @@ def run_test(testname, cmd, args):
     try:
         cmdline = [cmd] + args + [outputname]
         sys.stderr.flush()
-        print('run_test() cmdline:',cmdline)
-        fontdir =  os.path.join(os.path.dirname(__file__), "..", "testdata/ttf");
+        print('run_test() cmdline:', ' '.join(cmdline))
+        fontdir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "testdata/ttf"))
         fontenv = os.environ.copy()
         fontenv["OPENSCAD_FONT_PATH"] = fontdir
         print('using font directory:', fontdir)
         sys.stdout.flush()
         proc = subprocess.Popen(cmdline, env = fontenv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         comresult = proc.communicate()
-        stdouttext, errtext = comresult[0],comresult[1]
+        stdouttext, errtext = comresult[0].decode('utf-8'),comresult[1].decode('utf-8')
         if errtext != None and len(errtext) > 0:
             print("stderr output: " + errtext, file=sys.stderr)
         if stdouttext != None and len(stdouttext) > 0:
@@ -342,4 +356,5 @@ if __name__ == '__main__':
 
     resultfile = run_test(options.testname, options.cmd, args[1:])
     if not resultfile: exit(1)
+    if options.suffix == "3mf": post_process_3mf(resultfile)
     if not verification or not compare_with_expected(resultfile): exit(1)

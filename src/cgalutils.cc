@@ -10,8 +10,11 @@
 #include "polyset-utils.h"
 #include "grid.h"
 #include "node.h"
+#include "degree_trig.h"
 
 #include "cgal.h"
+#pragma push_macro("NDEBUG")
+#undef NDEBUG
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
 #include <CGAL/normal_vector_newell_3.h>
 #include <CGAL/Handle_hash_function.h>
@@ -25,6 +28,7 @@
 #else
 #include "ext/CGAL/convex_hull_3_bugfix.h"
 #endif
+#pragma pop_macro("NDEBUG")
 
 #include "svg.h"
 #include "Reindexer.h"
@@ -158,7 +162,7 @@ namespace CGALUtils {
 	*/
 	bool is_approximately_convex(const PolySet &ps) {
 
-		const double angle_threshold = cos(.1/180*M_PI); // .1°
+		const double angle_threshold = cos_degrees(.1); // .1°
 
 		typedef CGAL::Simple_cartesian<double> K;
 		typedef K::Vector_3 Vector;

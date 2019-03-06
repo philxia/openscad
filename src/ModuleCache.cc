@@ -8,7 +8,6 @@
 
 #include <stdio.h>
 #include <fstream>
-#include <sstream>
 #include <sys/stat.h>
 #include <algorithm>
 
@@ -28,7 +27,7 @@ ModuleCache *ModuleCache::inst = nullptr;
 
 	Returns the latest modification time of the module, its dependencies or includes.
 */
-std::time_t ModuleCache::evaluate(const std::string &filename, FileModule *&module)
+std::time_t ModuleCache::evaluate(const std::string &mainFile,const std::string &filename, FileModule *&module)
 {
 	module = nullptr;
 	auto entry = this->entries.find(filename);
@@ -91,31 +90,31 @@ std::time_t ModuleCache::evaluate(const std::string &filename, FileModule *&modu
 		}
 #endif
 
-		std::stringstream textbuf;
+		std::string text;
 		{
 			std::ifstream ifs(filename.c_str());
 			if (!ifs.is_open()) {
 				PRINTB("WARNING: Can't open library file '%s'\n", filename);
 				return 0;
 			}
-			textbuf << ifs.rdbuf();
+			text = STR(ifs.rdbuf() << "\n\x03\n" << commandline_commands);
 		}
-		textbuf << "\n\x03\n" << commandline_commands;
 		
 		print_messages_push();
 		
 		delete cacheEntry.parsed_module;
-		lib_mod = parse(cacheEntry.parsed_module, textbuf.str().c_str(), filename, false) ? cacheEntry.parsed_module : nullptr;
-		PRINTDB("  compiled module: %p", lib_mod);
+		lib_mod = parse(cacheEntry.parsed_module, text, filename, mainFile, false) ? cacheEntry.parsed_module : nullptr;
+		PRINTDB("compiled module: %s", filename);
 		cacheEntry.module = lib_mod;
 		cacheEntry.cache_id = cache_id;
-		
+		if(!found && lib_mod)
+			cacheEntry.includes_mtime = lib_mod->includesChanged();
 		print_messages_pop();
 	}
 	
 	module = lib_mod;
 	// FIXME: Do we need to handle include-only cases?
-	std::time_t deps_mtime = lib_mod ? lib_mod->handleDependencies() : 0;
+	std::time_t deps_mtime = lib_mod ? lib_mod->handleDependencies(false) : 0;
 
 	return std::max({deps_mtime, cacheEntry.mtime, cacheEntry.includes_mtime});
 }
@@ -127,10 +126,12 @@ void ModuleCache::clear()
 
 FileModule *ModuleCache::lookup(const std::string &filename)
 {
-	return isCached(filename) ? this->entries[filename].module : nullptr;
+	auto it = this->entries.find(filename);
+	return it != this->entries.end() ? it->second.module : nullptr;
 }
 
-bool ModuleCache::isCached(const std::string &filename)
-{
-	return this->entries.find(filename) != this->entries.end();
+void ModuleCache::clear_markers() {
+	for (auto entry : instance()->entries)
+        if(auto lib = entry.second.module)
+            lib->clearHandlingDependencies();
 }
